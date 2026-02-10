@@ -4,58 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/distribution/distribution/v3/configuration"
-	"github.com/distribution/distribution/v3/registry"
-	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
+	"github.com/olareg/olareg"
+	"github.com/olareg/olareg/config"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/sirupsen/logrus"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry/remote"
 )
 
-// setupRegistry starts an in-memory OCI registry and returns its address.
+// setupRegistry starts an in-memory olareg registry and returns its host:port address.
 func setupRegistry(t *testing.T) string {
 	t.Helper()
-
-	l, err := net.Listen("tcp", ":0")
+	regHandler := olareg.New(config.Config{
+		Storage: config.ConfigStorage{
+			StoreType: config.StoreMem,
+		},
+	})
+	ts := httptest.NewServer(regHandler)
+	t.Cleanup(func() {
+		ts.Close()
+		regHandler.Close()
+	})
+	u, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-
-	config := &configuration.Configuration{}
-	config.HTTP.Addr = fmt.Sprintf(":%d", port)
-	config.Log.AccessLog.Disabled = true
-	config.Log.Level = "error"
-	logrus.SetOutput(io.Discard)
-	config.HTTP.DrainTimeout = 10 * time.Second
-	config.Storage = map[string]configuration.Parameters{"inmemory": map[string]interface{}{}}
-
-	reg, err := registry.NewRegistry(context.Background(), config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go reg.ListenAndServe()
-
-	addr := fmt.Sprintf("localhost:%d", port)
-	for i := 0; i < 50; i++ {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return addr
+	return u.Host
 }
 
 func writeDeckFile(t *testing.T, cards []string) string {
