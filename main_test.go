@@ -296,6 +296,84 @@ func TestPushDeckDeduplication(t *testing.T) {
 	}
 }
 
+func TestSaveDeckLocal(t *testing.T) {
+	deckFile := writeDeckFile(t, []string{"2c", "ad"})
+	outputDir := filepath.Join(t.TempDir(), "deck-layout")
+
+	ctx := context.Background()
+	err := saveDeckLocal(ctx, outputDir, deckFile, "PNG-cards-1.3", "v1")
+	if err != nil {
+		t.Fatalf("saveDeckLocal failed: %v", err)
+	}
+
+	// Verify OCI layout structure exists.
+	layoutFile := filepath.Join(outputDir, "oci-layout")
+	if _, err := os.Stat(layoutFile); err != nil {
+		t.Fatalf("oci-layout file missing: %v", err)
+	}
+	indexFile := filepath.Join(outputDir, "index.json")
+	if _, err := os.Stat(indexFile); err != nil {
+		t.Fatalf("index.json file missing: %v", err)
+	}
+	blobsDir := filepath.Join(outputDir, "blobs", "sha256")
+	if _, err := os.Stat(blobsDir); err != nil {
+		t.Fatalf("blobs/sha256 directory missing: %v", err)
+	}
+
+	// Read index.json and verify it references our manifest.
+	indexBytes, err := os.ReadFile(indexFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index ocispec.Index
+	if err := json.Unmarshal(indexBytes, &index); err != nil {
+		t.Fatalf("failed to unmarshal index.json: %v", err)
+	}
+	if len(index.Manifests) != 1 {
+		t.Fatalf("expected 1 manifest in index, got %d", len(index.Manifests))
+	}
+
+	// Read the manifest blob and verify layers.
+	manifestDigest := index.Manifests[0].Digest
+	manifestPath := filepath.Join(blobsDir, manifestDigest.Encoded())
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("failed to read manifest blob: %v", err)
+	}
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatalf("failed to unmarshal manifest: %v", err)
+	}
+
+	if len(manifest.Layers) != 2 {
+		t.Fatalf("expected 2 layers, got %d", len(manifest.Layers))
+	}
+	if manifest.ArtifactType != "application/vnd.card-deck" {
+		t.Errorf("artifact type = %q, want application/vnd.card-deck", manifest.ArtifactType)
+	}
+
+	// Verify each layer blob exists on disk.
+	for i, layer := range manifest.Layers {
+		blobPath := filepath.Join(blobsDir, layer.Digest.Encoded())
+		info, err := os.Stat(blobPath)
+		if err != nil {
+			t.Errorf("layer %d blob missing: %v", i, err)
+			continue
+		}
+		if info.Size() != layer.Size {
+			t.Errorf("layer %d size = %d, want %d", i, info.Size(), layer.Size)
+		}
+	}
+}
+
+func TestSaveDeckLocalBadDeck(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "deck-layout")
+	err := saveDeckLocal(context.Background(), outputDir, "/nonexistent/deck.txt", "PNG-cards-1.3", "v1")
+	if err == nil {
+		t.Fatal("expected error for missing deck file")
+	}
+}
+
 func TestPushDeckBadDeckFile(t *testing.T) {
 	addr := setupRegistry(t)
 	target := fmt.Sprintf("%s/deck:v1", addr)

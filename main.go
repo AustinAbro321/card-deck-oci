@@ -12,6 +12,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
+	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote"
 )
 
@@ -83,38 +84,32 @@ func parseTag(target string) string {
 	return "latest"
 }
 
-// pushDeck builds an OCI artifact from a deck of cards and pushes it to a registry.
-func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP bool) error {
-	ref, err := remote.NewRepository(target)
-	if err != nil {
-		return fmt.Errorf("invalid target reference: %w", err)
-	}
-	tag := parseTag(target)
-
+// buildDeck reads the deck file, loads card PNGs, and packs them into an in-memory
+// OCI store. Returns the store, the manifest tag, and any error.
+func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.Store, error) {
 	cards, err := readDeck(deckPath)
 	if err != nil {
-		return fmt.Errorf("reading deck: %w", err)
+		return nil, fmt.Errorf("reading deck: %w", err)
 	}
 	fmt.Printf("Deck %q: %d cards\n", deckPath, len(cards))
 
 	store := memory.New()
 
-	// Push each card as a layer.
 	var layers []v1.Descriptor
 	for _, shorthand := range cards {
 		filename, err := shorthandToFilename(shorthand)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		data, err := os.ReadFile(filepath.Join(imagesDir, filename))
 		if err != nil {
-			return fmt.Errorf("reading card image %s: %w", filename, err)
+			return nil, fmt.Errorf("reading card image %s: %w", filename, err)
 		}
 
 		desc, err := oras.PushBytes(ctx, store, "image/png", data)
 		if err != nil {
-			return fmt.Errorf("pushing layer %s: %w", shorthand, err)
+			return nil, fmt.Errorf("pushing layer %s: %w", shorthand, err)
 		}
 
 		desc.Annotations = map[string]string{
@@ -126,23 +121,36 @@ func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP
 		fmt.Printf("  prepared %s (%s, %d bytes)\n", shorthand, filename, len(data))
 	}
 
-	// Pack OCI manifest.
 	packOpts := oras.PackManifestOptions{
 		Layers: layers,
 	}
 	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "application/vnd.card-deck", packOpts)
 	if err != nil {
-		return fmt.Errorf("packing manifest: %w", err)
+		return nil, fmt.Errorf("packing manifest: %w", err)
 	}
 
 	if err := store.Tag(ctx, manifestDesc, tag); err != nil {
-		return fmt.Errorf("tagging manifest: %w", err)
+		return nil, fmt.Errorf("tagging manifest: %w", err)
 	}
 
-	// Set up remote target.
+	return store, nil
+}
+
+// pushDeck builds an OCI artifact from a deck of cards and pushes it to a registry.
+func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP bool) error {
+	tag := parseTag(target)
+
+	store, err := buildDeck(ctx, deckPath, imagesDir, tag)
+	if err != nil {
+		return err
+	}
+
+	ref, err := remote.NewRepository(target)
+	if err != nil {
+		return fmt.Errorf("invalid target reference: %w", err)
+	}
 	ref.PlainHTTP = plainHTTP
 
-	// Copy to registry with de-duplication visibility.
 	copyOpts := oras.CopyOptions{}
 	copyOpts.PreCopy = func(_ context.Context, desc v1.Descriptor) error {
 		if desc.MediaType == "image/png" {
@@ -169,18 +177,59 @@ func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP
 	return nil
 }
 
+// saveDeckLocal builds an OCI artifact and writes it to a local OCI layout directory.
+func saveDeckLocal(ctx context.Context, outputDir, deckPath, imagesDir, tag string) error {
+	store, err := buildDeck(ctx, deckPath, imagesDir, tag)
+	if err != nil {
+		return err
+	}
+
+	dst, err := oci.New(outputDir)
+	if err != nil {
+		return fmt.Errorf("creating OCI layout at %s: %w", outputDir, err)
+	}
+
+	copyOpts := oras.CopyOptions{}
+	copyOpts.PreCopy = func(_ context.Context, desc v1.Descriptor) error {
+		if desc.MediaType == "image/png" {
+			name := desc.Annotations[v1.AnnotationTitle]
+			fmt.Printf("  writing %s (%d bytes)\n", name, desc.Size)
+		}
+		return nil
+	}
+
+	fmt.Printf("\nSaving to %s ...\n", outputDir)
+	_, err = oras.Copy(ctx, store, tag, dst, tag, copyOpts)
+	if err != nil {
+		return fmt.Errorf("copying to OCI layout: %w", err)
+	}
+
+	fmt.Println("Done.")
+	return nil
+}
+
 func run() error {
 	target := flag.String("target", "", "registry reference (e.g. localhost:5000/deck:v1)")
+	local := flag.String("local", "", "output OCI layout directory (instead of pushing to registry)")
 	deck := flag.String("deck", "cards.txt", "path to deck definition file")
 	images := flag.String("images", "PNG-cards-1.3", "path to card PNG directory")
 	plainHTTP := flag.Bool("plain-http", false, "use HTTP instead of HTTPS")
 	flag.Parse()
 
-	if *target == "" {
-		return fmt.Errorf("--target is required")
-	}
+	ctx := context.Background()
 
-	return pushDeck(context.Background(), *target, *deck, *images, *plainHTTP)
+	switch {
+	case *local != "":
+		tag := "latest"
+		if *target != "" {
+			tag = parseTag(*target)
+		}
+		return saveDeckLocal(ctx, *local, *deck, *images, tag)
+	case *target != "":
+		return pushDeck(ctx, *target, *deck, *images, *plainHTTP)
+	default:
+		return fmt.Errorf("either --target or --local is required")
+	}
 }
 
 func main() {
