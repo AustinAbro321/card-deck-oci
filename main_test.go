@@ -200,8 +200,8 @@ func TestPushDeck(t *testing.T) {
 		if layer.Annotations[ocispec.AnnotationTitle] != ec.filename {
 			t.Errorf("layer %d title = %q, want %q", i, layer.Annotations[ocispec.AnnotationTitle], ec.filename)
 		}
-		if layer.Annotations["vnd.card-deck.card"] != ec.shorthand {
-			t.Errorf("layer %d card = %q, want %q", i, layer.Annotations["vnd.card-deck.card"], ec.shorthand)
+		if layer.Annotations["io.github.card-deck.card"] != ec.shorthand {
+			t.Errorf("layer %d card = %q, want %q", i, layer.Annotations["io.github.card-deck.card"], ec.shorthand)
 		}
 	}
 
@@ -260,13 +260,13 @@ func TestPushDeckDeduplication(t *testing.T) {
 	copyOpts := oras.CopyOptions{}
 	copyOpts.PreCopy = func(_ context.Context, desc ocispec.Descriptor) error {
 		if desc.MediaType == "image/png" {
-			uploaded = append(uploaded, desc.Annotations["vnd.card-deck.card"])
+			uploaded = append(uploaded, desc.Annotations["io.github.card-deck.card"])
 		}
 		return nil
 	}
 	copyOpts.OnCopySkipped = func(_ context.Context, desc ocispec.Descriptor) error {
 		if desc.MediaType == "image/png" {
-			skipped = append(skipped, desc.Annotations["vnd.card-deck.card"])
+			skipped = append(skipped, desc.Annotations["io.github.card-deck.card"])
 		}
 		return nil
 	}

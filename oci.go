@@ -61,7 +61,7 @@ func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.St
 
 		desc.Annotations = map[string]string{
 			v1.AnnotationTitle:   filename,
-			"vnd.card-deck.card": shorthand,
+			"io.github.card-deck.card": shorthand,
 		}
 
 		layers = append(layers, desc)
