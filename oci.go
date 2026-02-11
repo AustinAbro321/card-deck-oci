@@ -14,7 +14,10 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 )
 
-const artifactType = "application/vnd.card-deck"
+const (
+	artifactType  = "application/vnd.card-deck"
+	configMediaType = "application/vnd.card-deck.config"
+)
 
 // parseTag extracts the tag from a registry reference like "localhost:5000/repo:tag".
 func parseTag(target string) string {
@@ -65,8 +68,22 @@ func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.St
 		fmt.Printf("  prepared %s (%s, %d bytes)\n", shorthand, filename, len(data))
 	}
 
+	// Use the deck file as the manifest config.
+	deckData, err := os.ReadFile(deckPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading deck file for config: %w", err)
+	}
+	configDesc, err := oras.PushBytes(ctx, store, configMediaType, deckData)
+	if err != nil {
+		return nil, fmt.Errorf("pushing config: %w", err)
+	}
+	configDesc.Annotations = map[string]string{
+		v1.AnnotationTitle: filepath.Base(deckPath),
+	}
+
 	packOpts := oras.PackManifestOptions{
-		Layers: layers,
+		Layers:           layers,
+		ConfigDescriptor: &configDesc,
 	}
 	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, artifactType, packOpts)
 	if err != nil {

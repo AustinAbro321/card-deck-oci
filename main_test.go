@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/olareg/olareg/config"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry/remote"
 )
 
@@ -208,6 +208,27 @@ func TestPushDeck(t *testing.T) {
 	if manifest.ArtifactType != "application/vnd.card-deck" {
 		t.Errorf("artifact type = %q, want application/vnd.card-deck", manifest.ArtifactType)
 	}
+
+	// Verify the config is the deck file.
+	if manifest.Config.MediaType != configMediaType {
+		t.Errorf("config media type = %q, want %q", manifest.Config.MediaType, configMediaType)
+	}
+	rc, err := repo.Fetch(ctx, manifest.Config)
+	if err != nil {
+		t.Fatalf("failed to fetch config blob: %v", err)
+	}
+	configBlob, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deckContent, err := os.ReadFile(deckFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(configBlob) != string(deckContent) {
+		t.Errorf("config blob content does not match deck file")
+	}
 }
 
 func TestPushDeckDeduplication(t *testing.T) {
@@ -222,41 +243,9 @@ func TestPushDeckDeduplication(t *testing.T) {
 	}
 
 	// Build second deck sharing 2c but adding kh.
-	// Replicate the OCI workflow inline so we can attach custom copy callbacks.
 	deck2 := writeDeckFile(t, []string{"2c", "kh"})
-	cards2, err := readDeck(deck2)
+	store, err := buildDeck(ctx, deck2, "PNG-cards-1.3", "v2")
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	store := memory.New()
-	var layers []ocispec.Descriptor
-	for _, shorthand := range cards2 {
-		filename, err := shorthandToFilename(shorthand)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(filepath.Join("PNG-cards-1.3", filename))
-		if err != nil {
-			t.Fatal(err)
-		}
-		desc, err := oras.PushBytes(ctx, store, "image/png", data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		desc.Annotations = map[string]string{
-			ocispec.AnnotationTitle: filename,
-			"vnd.card-deck.card":   shorthand,
-		}
-		layers = append(layers, desc)
-	}
-
-	packOpts := oras.PackManifestOptions{Layers: layers}
-	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "application/vnd.card-deck", packOpts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Tag(ctx, manifestDesc, "v2"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -350,6 +339,23 @@ func TestSaveDeckLocal(t *testing.T) {
 	}
 	if manifest.ArtifactType != "application/vnd.card-deck" {
 		t.Errorf("artifact type = %q, want application/vnd.card-deck", manifest.ArtifactType)
+	}
+
+	// Verify the config blob is the deck file.
+	if manifest.Config.MediaType != configMediaType {
+		t.Errorf("config media type = %q, want %q", manifest.Config.MediaType, configMediaType)
+	}
+	configBlobPath := filepath.Join(blobsDir, manifest.Config.Digest.Encoded())
+	configBlob, err := os.ReadFile(configBlobPath)
+	if err != nil {
+		t.Fatalf("config blob missing: %v", err)
+	}
+	deckContent, err := os.ReadFile(deckFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(configBlob) != string(deckContent) {
+		t.Errorf("config blob content does not match deck file")
 	}
 
 	// Verify each layer blob exists on disk.
