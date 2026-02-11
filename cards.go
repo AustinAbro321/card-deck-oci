@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -43,22 +43,15 @@ func shorthandToFilename(s string) (string, error) {
 	return fmt.Sprintf("%s_of_%s.png", rank, suit), nil
 }
 
-// readDeck reads card shorthands from a file, one per line, skipping blanks and # comments.
+// readDeck reads card shorthands from a JSON array file.
 func readDeck(path string) ([]string, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
 	var cards []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		cards = append(cards, line)
+	if err := json.Unmarshal(data, &cards); err != nil {
+		return nil, fmt.Errorf("parsing deck %s: %w", path, err)
 	}
-	return cards, scanner.Err()
+	return cards, nil
 }

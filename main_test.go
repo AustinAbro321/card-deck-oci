@@ -40,13 +40,16 @@ func setupRegistry(t *testing.T) string {
 
 func writeDeckFile(t *testing.T, cards []string) string {
 	t.Helper()
+	data, err := json.Marshal(cards)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f, err := os.CreateTemp(t.TempDir(), "deck-*.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range cards {
-		fmt.Fprintln(f, c)
-	}
+	f.Write(data)
+	f.Write([]byte("\n"))
 	f.Close()
 	return f.Name()
 }
@@ -116,7 +119,7 @@ func TestParseTag(t *testing.T) {
 func TestReadDeck(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "deck.txt")
-	content := "# comment\n2c\n\nad\n# another comment\nkh\n"
+	content := `["2c", "ad", "kh"]`
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}

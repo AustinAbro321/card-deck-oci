@@ -16,7 +16,7 @@ import (
 
 const (
 	artifactType  = "application/vnd.card-deck"
-	configMediaType = "application/vnd.card-deck.config"
+	configMediaType = "application/vnd.card-deck.config+json"
 )
 
 // parseTag extracts the tag from a registry reference like "localhost:5000/repo:tag".
