@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -99,6 +100,9 @@ func loadDeck(ctx context.Context, src oras.ReadOnlyTarget, tag string) (*deckSe
 	return &deckServer{cards: cards, images: images}, nil
 }
 
+//go:embed index.html
+var indexHTML string
+
 var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 	"toFilename": func(s string) string {
 		f, err := shorthandToFilename(s)
@@ -107,23 +111,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 		}
 		return f
 	},
-}).Parse(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Card Deck</title><style>
-body { font-family: sans-serif; background: #076324; color: #fff; margin: 2rem; }
-h1 { text-align: center; }
-.grid { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
-.card { text-align: center; }
-.card img { height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-.card p { margin: 0.25rem 0 0; font-size: 0.9rem; }
-</style></head><body>
-<h1>Card Deck ({{len .Cards}} cards)</h1>
-<div class="grid">
-{{range .Cards}}  <div class="card">
-    <img src="/images/{{toFilename .}}" alt="{{.}}">
-    <p>{{.}}</p>
-  </div>
-{{end}}</div>
-</body></html>`))
+}).Parse(indexHTML))
 
 func (ds *deckServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

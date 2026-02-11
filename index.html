@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Card Deck</title><style>
+body { font-family: sans-serif; background: #076324; color: #fff; margin: 2rem; }
+h1 { text-align: center; }
+.grid { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
+.card { text-align: center; }
+.card img { height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.card p { margin: 0.25rem 0 0; font-size: 0.9rem; }
+</style></head><body>
+<h1>Card Deck ({{len .Cards}} cards)</h1>
+<div class="grid">
+{{range .Cards}}  <div class="card">
+    <img src="/images/{{toFilename .}}" alt="{{.}}">
+    <p>{{.}}</p>
+  </div>
+{{end}}</div>
+</body></html>
