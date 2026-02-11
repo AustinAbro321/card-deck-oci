@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func TestServeDeckFromLocal(t *testing.T) {
@@ -124,5 +128,54 @@ func TestHandleImageNotFound(t *testing.T) {
 
 	if w.Code != 404 {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestLoadDeckTamperedBlob(t *testing.T) {
+	deckFile := writeDeckFile(t, []string{"2c"})
+	outputDir := filepath.Join(t.TempDir(), "deck-layout")
+
+	ctx := context.Background()
+	if err := saveDeckLocal(ctx, outputDir, deckFile, "PNG-cards-1.3", "latest"); err != nil {
+		t.Fatalf("saveDeckLocal failed: %v", err)
+	}
+
+	// Read index.json to find the manifest, then find a layer blob to tamper with.
+	indexBytes, err := os.ReadFile(filepath.Join(outputDir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index ocispec.Index
+	if err := json.Unmarshal(indexBytes, &index); err != nil {
+		t.Fatal(err)
+	}
+	blobsDir := filepath.Join(outputDir, "blobs", "sha256")
+	manifestBytes, err := os.ReadFile(filepath.Join(blobsDir, index.Manifests[0].Digest.Encoded()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	// Overwrite the first layer blob with garbage.
+	layerDigest := manifest.Layers[0].Digest.Encoded()
+	blobPath := filepath.Join(blobsDir, layerDigest)
+	if err := os.Chmod(blobPath, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blobPath, []byte("tampered garbage data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	src, tag, err := openSource(ctx, outputDir, false)
+	if err != nil {
+		t.Fatalf("openSource failed: %v", err)
+	}
+
+	_, err = loadDeck(ctx, src, tag)
+	if err == nil {
+		t.Fatal("expected error when loading deck with tampered blob, got nil")
 	}
 }

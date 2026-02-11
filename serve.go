@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"net/http"
 	"os"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -60,14 +60,9 @@ func loadDeck(ctx context.Context, src oras.ReadOnlyTarget, tag string) (*deckSe
 		return nil, fmt.Errorf("resolving tag %q: %w", tag, err)
 	}
 
-	rc, err := src.Fetch(ctx, desc)
+	manifestBytes, err := content.FetchAll(ctx, src, desc)
 	if err != nil {
 		return nil, fmt.Errorf("fetching manifest: %w", err)
-	}
-	manifestBytes, err := io.ReadAll(rc)
-	rc.Close()
-	if err != nil {
-		return nil, fmt.Errorf("reading manifest: %w", err)
 	}
 
 	var manifest ocispec.Manifest
@@ -75,14 +70,9 @@ func loadDeck(ctx context.Context, src oras.ReadOnlyTarget, tag string) (*deckSe
 		return nil, fmt.Errorf("unmarshaling manifest: %w", err)
 	}
 
-	rc, err = src.Fetch(ctx, manifest.Config)
+	configBytes, err := content.FetchAll(ctx, src, manifest.Config)
 	if err != nil {
 		return nil, fmt.Errorf("fetching config: %w", err)
-	}
-	configBytes, err := io.ReadAll(rc)
-	rc.Close()
-	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
 	var cards []string
@@ -99,14 +89,9 @@ func loadDeck(ctx context.Context, src oras.ReadOnlyTarget, tag string) (*deckSe
 		if filename == "" {
 			continue
 		}
-		rc, err := src.Fetch(ctx, layer)
+		data, err := content.FetchAll(ctx, src, layer)
 		if err != nil {
 			return nil, fmt.Errorf("fetching layer %s: %w", filename, err)
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("reading layer %s: %w", filename, err)
 		}
 		images[filename] = data
 	}
