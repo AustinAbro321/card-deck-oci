@@ -10,7 +10,7 @@ import (
 func run() error {
 	target := flag.String("target", "", "registry reference (e.g. localhost:5000/deck:v1)")
 	local := flag.String("local", "", "output OCI layout directory (instead of pushing to registry)")
-	deck := flag.String("deck", "cards.txt", "path to deck definition file")
+	deck := flag.String("deck", "", "path to deck definition file")
 	images := flag.String("images", "PNG-cards-1.3", "path to card PNG directory")
 	plainHTTP := flag.Bool("plain-http", false, "use HTTP instead of HTTPS")
 	flag.Parse()

@@ -12,6 +12,8 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/credentials"
 )
 
 const (
@@ -111,6 +113,15 @@ func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP
 		return fmt.Errorf("invalid target reference: %w", err)
 	}
 	ref.PlainHTTP = plainHTTP
+
+	credStore, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	if err != nil {
+		return fmt.Errorf("loading docker credentials: %w", err)
+	}
+	ref.Client = &auth.Client{
+		Cache:      auth.NewCache(),
+		Credential: credentials.Credential(credStore),
+	}
 
 	copyOpts := oras.CopyOptions{}
 	copyOpts.PreCopy = func(_ context.Context, desc v1.Descriptor) error {
