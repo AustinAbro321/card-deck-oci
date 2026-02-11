@@ -44,8 +44,13 @@ func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.St
 
 	store := memory.New()
 
+	uniqueCards := make(map[string]bool)
+	for _, c := range cards {
+		uniqueCards[c] = true
+	}
+
 	var layers []v1.Descriptor
-	for _, shorthand := range cards {
+	for shorthand := range uniqueCards {
 		filename, err := shorthandToFilename(shorthand)
 		if err != nil {
 			return nil, err
