@@ -35,7 +35,7 @@ func openDeck(ctx context.Context, source string, plainHTTP bool) (oras.ReadOnly
 		return store, "latest", nil
 	}
 
-	tag := parseTag(source)
+	tag := parseRef(source)
 	repo, err := remote.NewRepository(source)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid source reference: %w", err)

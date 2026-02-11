@@ -21,8 +21,17 @@ const (
 	configMediaType = "application/vnd.card-deck.config+json"
 )
 
-// parseTag extracts the tag from a registry reference like "localhost:5000/repo:tag".
-func parseTag(target string) string {
+// parseRef extracts the tag from a registry reference like "localhost:5000/repo:tag".
+// parseRef extracts the tag or digest reference from a registry reference.
+// Examples:
+//
+//	"localhost:5000/deck:v1"          → "v1"
+//	"ghcr.io/user/repo@sha256:abc…"  → "sha256:abc…"
+//	"localhost:5000/deck"             → "latest"
+func parseRef(target string) string {
+	if i := strings.LastIndex(target, "@"); i >= 0 {
+		return target[i+1:]
+	}
 	parts := strings.SplitN(target, ":", 3)
 	if len(parts) == 3 {
 		return parts[2]
@@ -106,7 +115,7 @@ func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.St
 
 // pushDeck builds an OCI artifact from a deck of cards and pushes it to a registry.
 func pushDeck(ctx context.Context, target, deckPath, imagesDir string, plainHTTP bool) error {
-	tag := parseTag(target)
+	tag := parseRef(target)
 
 	store, err := buildDeck(ctx, deckPath, imagesDir, tag)
 	if err != nil {

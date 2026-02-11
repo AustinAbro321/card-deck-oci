@@ -24,7 +24,7 @@ func run() error {
 	case *local != "":
 		tag := "latest"
 		if *target != "" {
-			tag = parseTag(*target)
+			tag = parseRef(*target)
 		}
 		return saveDeckLocal(ctx, *local, *deck, *images, tag)
 	case *target != "":

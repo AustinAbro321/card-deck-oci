@@ -96,7 +96,7 @@ func TestShorthandToFilename(t *testing.T) {
 	}
 }
 
-func TestParseTag(t *testing.T) {
+func TestParseRef(t *testing.T) {
 	tests := []struct {
 		input string
 		want  string
@@ -105,12 +105,13 @@ func TestParseTag(t *testing.T) {
 		{"localhost:5000/deck:latest", "latest"},
 		{"myregistry.io/ns/repo:v2", "v2"},
 		{"localhost:5000/deck", "latest"},
+		{"ghcr.io/user/repo@sha256:abc123", "sha256:abc123"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			got := parseTag(tc.input)
+			got := parseRef(tc.input)
 			if got != tc.want {
-				t.Errorf("parseTag(%q) = %q, want %q", tc.input, got, tc.want)
+				t.Errorf("parseRef(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
