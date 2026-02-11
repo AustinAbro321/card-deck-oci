@@ -13,11 +13,14 @@ func run() error {
 	deck := flag.String("deck", "", "path to deck definition file")
 	images := flag.String("images", "PNG-cards-1.3", "path to card PNG directory")
 	plainHTTP := flag.Bool("plain-http", false, "use HTTP instead of HTTPS")
+	serve := flag.String("serve", "", "serve deck from OCI source (local dir or registry ref)")
 	flag.Parse()
 
 	ctx := context.Background()
 
 	switch {
+	case *serve != "":
+		return serveDeck(ctx, *serve, *plainHTTP)
 	case *local != "":
 		tag := "latest"
 		if *target != "" {
@@ -27,7 +30,7 @@ func run() error {
 	case *target != "":
 		return pushDeck(ctx, *target, *deck, *images, *plainHTTP)
 	default:
-		return fmt.Errorf("either --target or --local is required")
+		return fmt.Errorf("either --target, --local, or --serve is required")
 	}
 }
 

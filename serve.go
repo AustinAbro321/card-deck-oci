@@ -1,0 +1,175 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/oci"
+	"oras.land/oras-go/v2/registry/remote"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/credentials"
+)
+
+type deckServer struct {
+	cards  []string
+	images map[string][]byte
+}
+
+// openSource opens a local OCI layout directory or a remote registry reference.
+func openSource(ctx context.Context, source string, plainHTTP bool) (oras.ReadOnlyTarget, string, error) {
+	info, err := os.Stat(source)
+	if err == nil && info.IsDir() {
+		store, err := oci.NewWithContext(ctx, source)
+		if err != nil {
+			return nil, "", fmt.Errorf("opening OCI layout %s: %w", source, err)
+		}
+		return store, "latest", nil
+	}
+
+	tag := parseTag(source)
+	repo, err := remote.NewRepository(source)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid source reference: %w", err)
+	}
+	repo.PlainHTTP = plainHTTP
+
+	credStore, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
+	if err != nil {
+		return nil, "", fmt.Errorf("loading docker credentials: %w", err)
+	}
+	repo.Client = &auth.Client{
+		Cache:      auth.NewCache(),
+		Credential: credentials.Credential(credStore),
+	}
+
+	return repo, tag, nil
+}
+
+// loadDeck fetches the manifest, config, and image layers from an OCI source.
+func loadDeck(ctx context.Context, src oras.ReadOnlyTarget, tag string) (*deckServer, error) {
+	desc, err := src.Resolve(ctx, tag)
+	if err != nil {
+		return nil, fmt.Errorf("resolving tag %q: %w", tag, err)
+	}
+
+	rc, err := src.Fetch(ctx, desc)
+	if err != nil {
+		return nil, fmt.Errorf("fetching manifest: %w", err)
+	}
+	manifestBytes, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest: %w", err)
+	}
+
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, fmt.Errorf("unmarshaling manifest: %w", err)
+	}
+
+	rc, err = src.Fetch(ctx, manifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("fetching config: %w", err)
+	}
+	configBytes, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	var cards []string
+	if err := json.Unmarshal(configBytes, &cards); err != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+
+	images := make(map[string][]byte)
+	for _, layer := range manifest.Layers {
+		if layer.MediaType != "image/png" {
+			continue
+		}
+		filename := layer.Annotations[ocispec.AnnotationTitle]
+		if filename == "" {
+			continue
+		}
+		rc, err := src.Fetch(ctx, layer)
+		if err != nil {
+			return nil, fmt.Errorf("fetching layer %s: %w", filename, err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading layer %s: %w", filename, err)
+		}
+		images[filename] = data
+	}
+
+	return &deckServer{cards: cards, images: images}, nil
+}
+
+var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
+	"toFilename": func(s string) string {
+		f, err := shorthandToFilename(s)
+		if err != nil {
+			return ""
+		}
+		return f
+	},
+}).Parse(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Card Deck</title><style>
+body { font-family: sans-serif; background: #076324; color: #fff; margin: 2rem; }
+h1 { text-align: center; }
+.grid { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
+.card { text-align: center; }
+.card img { height: 200px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.card p { margin: 0.25rem 0 0; font-size: 0.9rem; }
+</style></head><body>
+<h1>Card Deck ({{len .Cards}} cards)</h1>
+<div class="grid">
+{{range .Cards}}  <div class="card">
+    <img src="/images/{{toFilename .}}" alt="{{.}}">
+    <p>{{.}}</p>
+  </div>
+{{end}}</div>
+</body></html>`))
+
+func (ds *deckServer) handleIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	indexTmpl.Execute(w, struct{ Cards []string }{ds.cards})
+}
+
+func (ds *deckServer) handleImage(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/images/")
+	data, ok := ds.images[name]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(data)
+}
+
+// serveDeck loads a deck from a local OCI layout or remote registry and serves it over HTTP.
+func serveDeck(ctx context.Context, source string, plainHTTP bool) error {
+	src, tag, err := openSource(ctx, source, plainHTTP)
+	if err != nil {
+		return err
+	}
+
+	ds, err := loadDeck(ctx, src, tag)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Serving %d cards on http://localhost:8080\n", len(ds.cards))
+	http.HandleFunc("/", ds.handleIndex)
+	http.HandleFunc("/images/", ds.handleImage)
+	return http.ListenAndServe(":8080", nil)
+}
