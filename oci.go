@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	artifactType  = "application/vnd.card-deck"
+	artifactType    = "application/vnd.card-deck"
 	configMediaType = "application/vnd.card-deck.config+json"
 )
 
@@ -67,7 +67,7 @@ func buildDeck(ctx context.Context, deckPath, imagesDir, tag string) (*memory.St
 		}
 
 		desc.Annotations = map[string]string{
-			v1.AnnotationTitle:   filename,
+			v1.AnnotationTitle:         filename,
 			"io.github.card-deck.card": shorthand,
 		}
 
@@ -166,16 +166,7 @@ func saveDeckLocal(ctx context.Context, outputDir, deckPath, imagesDir, tag stri
 		return fmt.Errorf("creating OCI layout at %s: %w", outputDir, err)
 	}
 
-	copyOpts := oras.CopyOptions{}
-	copyOpts.PreCopy = func(_ context.Context, desc v1.Descriptor) error {
-		if desc.MediaType == "image/png" {
-			name := desc.Annotations[v1.AnnotationTitle]
-			fmt.Printf("  writing %s (%d bytes)\n", name, desc.Size)
-		}
-		return nil
-	}
-
-	fmt.Printf("\nSaving to %s ...\n", outputDir)
+	copyOpts := oras.DefaultCopyOptions
 	_, err = oras.Copy(ctx, store, tag, dst, tag, copyOpts)
 	if err != nil {
 		return fmt.Errorf("copying to OCI layout: %w", err)

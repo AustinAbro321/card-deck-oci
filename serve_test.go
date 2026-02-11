@@ -24,7 +24,7 @@ func TestServeDeckFromLocal(t *testing.T) {
 		t.Fatalf("saveDeckLocal failed: %v", err)
 	}
 
-	src, tag, err := openSource(ctx, outputDir, false)
+	src, tag, err := openDeck(ctx, outputDir, false)
 	if err != nil {
 		t.Fatalf("openSource failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestServeDeckFromRegistry(t *testing.T) {
 		t.Fatalf("pushDeck failed: %v", err)
 	}
 
-	src, tag, err := openSource(ctx, target, true)
+	src, tag, err := openDeck(ctx, target, true)
 	if err != nil {
 		t.Fatalf("openSource failed: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestLoadDeckTamperedBlob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src, tag, err := openSource(ctx, outputDir, false)
+	src, tag, err := openDeck(ctx, outputDir, false)
 	if err != nil {
 		t.Fatalf("openSource failed: %v", err)
 	}

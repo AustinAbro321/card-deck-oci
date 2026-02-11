@@ -24,8 +24,8 @@ type deckServer struct {
 	images map[string][]byte
 }
 
-// openSource opens a local OCI layout directory or a remote registry reference.
-func openSource(ctx context.Context, source string, plainHTTP bool) (oras.ReadOnlyTarget, string, error) {
+// openDeck opens a local OCI layout directory or a remote registry reference.
+func openDeck(ctx context.Context, source string, plainHTTP bool) (oras.ReadOnlyTarget, string, error) {
 	info, err := os.Stat(source)
 	if err == nil && info.IsDir() {
 		store, err := oci.NewWithContext(ctx, source)
@@ -131,7 +131,7 @@ func (ds *deckServer) handleImage(w http.ResponseWriter, r *http.Request) {
 
 // serveDeck loads a deck from a local OCI layout or remote registry and serves it over HTTP.
 func serveDeck(ctx context.Context, source string, plainHTTP bool) error {
-	src, tag, err := openSource(ctx, source, plainHTTP)
+	src, tag, err := openDeck(ctx, source, plainHTTP)
 	if err != nil {
 		return err
 	}
